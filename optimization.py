@@ -1,35 +1,28 @@
 import numpy as np
 
-from sklearn.datasets import make_circles, make_moons
-
-
-def get_spiral():
-    radius = np.linspace(1, 10, 100)
-    thetas = np.empty((6, 100))
-    for i in range(6):
-        start_angle = np.pi * i / 3.0
-        end_angle = start_angle + np.pi / 2
-        points = np.linspace(start_angle, end_angle, 100)
-        thetas[i] = points
-    x1 = np.empty((6, 100))
-    x2 = np.empty((6, 100))
-    for i in range(6):
-        x1[i] = radius * np.cos(thetas[i])
-        x2[i] = radius * np.sin(thetas[i])
-    X = np.empty((600, 2))
-    X[:, 0] = x1.flatten()
-    X[:, 1] = x2.flatten()
-    X += np.random.rand(600, 2) * 0.5
-    Y = np.array([0] * 100 + [1] * 100 + [0] * 100 + [1] * 100 + [0] * 100 + [1] * 100)
-    return X, Y
-
 
 def binary_loss(pred, Y):
     return (-Y * np.log(pred + 1e-8) - (1 - Y) * np.log(1 - pred + 1e-8)).mean()
 
 
+def y2vec(Y, K):
+    N = len(Y)
+    ind = np.zeros((N, K))
+    for i in range(N):
+        ind[i, int(Y[i])] = 1
+    return ind
+
+
+def vec2y(vec):
+    return np.argmax(vec, axis=1)
+
+
+def cross_entropy(pred, Y):
+    return (-Y * np.log(pred + 1e-10)).sum()
+
+
 def error_rate(pred, Y):
-    return ((pred > 0.5) != Y).sum() / len(Y)
+    return (vec2y(pred) != vec2y(Y)).sum() / len(Y)
 
 
 class Hidden_Layer ():
@@ -44,7 +37,11 @@ class Hidden_Layer ():
     def forward(self, X):
         self.z = X.dot(self.weight) + self.bias
         if self.OL:
-            return 1 / (1 + np.exp(-self.z))
+            if self.M == 1:
+                return 1 / (1 + np.exp(-self.z))
+            if self.M > 1:
+                exps = np.exp(self.z - np.max(self.z))
+                return exps / np.sum(exps, axis=1, keepdims=True)
         return self.z * (self.z > 0)
 
 
@@ -73,15 +70,14 @@ class DNN ():
             return z_list
         return z_list[-1]
 
-    def fit(self, X, Y, epoch=10000, learning_rate=0.001, verbose=True, beta1=0.9, beta2=0.999, batch_size=1):
+    def fit(self, X, Y, epoch=10000, learning_rate=0.001, verbose=True, beta1=0.9, beta2=0.999, batch_size=1, clipping=5):
         X = np.float32(np.array(X))
         Y = np.float32(np.array(Y))
-        Y.shape = (Y.shape[0], 1)
         sample = np.random.randint(0, len(X), batch_size)
-        X = X[sample]
-        Y = Y[sample]
+        Xs = X[sample]
+        Ys = Y[sample]
         for i in range(1, epoch + 1):
-            e = (self.predict(X) - Y)
+            e = (self.predict(Xs) - Ys)
 
             def grad_loop(i):
                 if i == 0:
@@ -93,7 +89,7 @@ class DNN ():
                 if i < (len(self.architecture) - 2):
                     return np.matmul(self.container[-i - 2].z.T, grad_loop(i)) / batch_size
                 else:
-                    return np.matmul(X.T, grad_loop(i)) / batch_size
+                    return np.matmul(Xs.T, grad_loop(i)) / batch_size
 
             def grad_bias(i):
                 return grad_loop(i).mean(axis=0)
@@ -102,8 +98,8 @@ class DNN ():
             v_gw_t1 = []
             v_gb_t1 = []
             for j in range(len(self.architecture) - 1):
-                gw = grad_weight(len(self.architecture) - 2 - j)
-                gb = grad_bias(len(self.architecture) - 2 - j)
+                gw = np.clip(grad_weight(len(self.architecture) - 2 - j), -clipping, clipping)
+                gb = np.clip(grad_bias(len(self.architecture) - 2 - j), -clipping, clipping)
                 if i == 1:
                     m_gw = (1 - beta1) * gw
                     m_gb = (1 - beta1) * gb
@@ -126,13 +122,14 @@ class DNN ():
                 self.container[j].bias -= learning_rate * m_gb / (np.sqrt(v_gb) + 1e-8)
             memory1, memory2, memory3, memory4 = m_gw_t1, m_gb_t1, v_gw_t1, v_gb_t1
             if verbose:
-                if i % 100 == 0:
-                    print('epoch:', i, 'cost:', binary_loss(self.predict(X), Y), 'error rate:', error_rate(self.predict(X), Y))
+                if i % 10 == 0:
+                    print('epoch:', i, 'cost:', cross_entropy(self.predict(Xs), Ys), 'error rate:', error_rate(self.predict(Xs), Ys))
 
 
 if __name__ == '__main__':
-    # X, Y = make_circles(10000)
-    #X, Y = make_moons(10000)
-    X, Y = get_spiral()
-    dnn = DNN([2, 32, 32, 32, 32, 32, 32, 1])
-    dnn.fit(X, Y, epoch=10000, batch_size=32, learning_rate=0.001)
+    from tensorflow.examples.tutorials.mnist import input_data
+    mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+    X = mnist.train.images
+    Y = mnist.train.labels
+    dnn = DNN([X.shape[1], 64, 32, 10])
+    dnn.fit(X, Y, epoch=1000, batch_size=32, learning_rate=0.001)
