@@ -1,2 +1,2 @@
 # dnn_numpy
-Numpy Implementation of Deep Neural Network
+Numpy Implementation of Deep Neural Network with Adam Optimizer.
