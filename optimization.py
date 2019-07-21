@@ -136,5 +136,5 @@ if __name__ == '__main__':
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
     X = mnist.train.images
     Y = mnist.train.labels
-    dnn = DNN([X.shape[1], 64, 32, 10])
+    dnn = DNN([X.shape[1], 32, 32, 10])
     dnn.fit(X, Y, epoch=10, batch_size=32, learning_rate=0.001)
